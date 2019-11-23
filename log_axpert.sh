@@ -7,7 +7,7 @@
 # 2019-11-23	initial version
 #
 
-# serial settigns: 2400 baud 8N1
+# serial settings: 2400 baud 8N1
 #
 # use SERVER and PORT if you connect via a ser2net server
 SERVER="ser2net"
