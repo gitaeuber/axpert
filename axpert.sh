@@ -74,13 +74,14 @@ then
     do
 	echo -en "$1\t"
 	echo -en "$1$(axpert_crc16 "$1")\r" >&5
-	read -u 5 -t 2 LINE
-#	    if [ "${LINE:0:1}" = "(" ]
-#	    then
+	read -u 5 -t 3 LINE
+	    # test for correct length($LINE) start char "(" and CRC
+	    if [ "${#LINE}" -eq 110 -a "${LINE:0:1}${LINE:(-3)}" = "($(echo -en "$(axpert_crc16 "${LINE:0:(${#LINE}-3)}")\r")" ]
+	    then
 		echo "${LINE:1:$((${#LINE}-4))}"
-#	    else
-#		echo "answer incorrect"
-#	    fi
+	    else
+		echo "answer incorrect"
+	    fi
 	shift
     done
     exec 5<&-
