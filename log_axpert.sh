@@ -63,12 +63,12 @@ read -n 30 -t 1 -u 5
 #echo -e "$CMD$(axpert_crc16 "$CMD")" >&2
 echo -en "$CMD$(axpert_crc16 "$CMD")\r" >&5
 
-if ! read -a LINE -u 5 -t 2
+if ! read -u 5 -t 2 LINE
 then
-    if [ "${LINE[0]:0:1}" != "(" ]
+    if [ "${#LINE}" -ne 110 -o "${LINE:0:1}${LINE:(-3)}" != "($(echo -en "$(axpert_crc16 "${LINE:0:(${#LINE}-3)}")\r")" ]
     then
 	echo "couldn't read correct line from device" >&2
 	exit 1
     fi
-    echo "$(date +%Y%m%d%H%M%S) ${LINE[0]:1} ${LINE[*]:1:$((${#LINE[*]}-2))} ${LINE[$((${#LINE[*]}-1))]:0:3}" >> "$LOGFILE";
+    echo "$(date +%Y%m%d%H%M%S) ${LINE:1:(${#LINE}-4)}" >> "$LOGFILE";
 fi
