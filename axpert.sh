@@ -75,7 +75,7 @@ then
 	echo -en "$1\t"
 	echo -en "$1$(axpert_crc16 "$1")\r" >&5
 	read -u 5 -t 3 LINE
-	    # test for correct length($LINE) start char "(" and CRC
+	    # test for minimum length($LINE), start char "(" and CRC
 	    if [ "${#LINE}" -gt 3 -a "${LINE:0:1}${LINE:(-3)}" = "($(echo -en "$(axpert_crc16 "${LINE:0:(${#LINE}-3)}")\r")" ]
 	    then
 		echo "${LINE:1:$((${#LINE}-4))}"
