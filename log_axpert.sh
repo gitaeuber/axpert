@@ -4,6 +4,7 @@
 # © Lars Täuber; AGPLv3 http://www.gnu.org/licenses/agpl-3.0.html
 #   lars.taeuber@web.de
 #
+# 2019-11-30	small optimizations
 # 2019-11-23	initial version
 #
 
@@ -12,8 +13,11 @@
 # use SERVER and PORT if you connect via a ser2net server
 SERVER="ser2net"
 PORT=3000
+#DEV="/dev/ttyUSB0"
+DEV="/dev/tcp/$SERVER/$PORT"
 LOGFILE="/srv/inverter/$(date +%Y-%m)-1.log"
 CMD="QPIGS"
+TRIES=2
 
 function axpert_crc16() {
     CRC_TA=($((0x0000)) $((0x1021)) $((0x2042)) $((0x3063)) $((0x4084)) $((0x50a5)) $((0x60c6)) $((0x70e7))
@@ -50,25 +54,53 @@ function axpert_crc16() {
 }	# axpert_crc16()
 
 test -e "$LOGFILE" || \
-    echo "%Y%m%d%H%M%S U_GRID F_GRID U_OUT F_OUT VA_OUT P_OUT LOAD% U_BUS U_BATT I_BATT_IN C_BATT T_INV I_PV2BATT U_PV U_BATT_SCC I_BATT_OUT STATUS_BITS1 dU_FAN EEPROM P_PV2BATT STATUS_BITS2" >> "$LOGFILE";
+    echo "%Y%m%d%H%M%S U_GRID F_GRID U_OUT F_OUT VA_OUT P_OUT LOAD% U_BUS U_BATT I_BATT_IN C_BATT T_INV I_PV2BATT U_PV U_BATT_SCC I_BATT_OUT STATUS_BITS1 dU_FAN EEPROM P_PV STATUS_BITS2" >> "$LOGFILE";
 
-while ! exec 5<>/dev/tcp/$SERVER/$PORT
+let I=10;
+while ! exec 5<>"$DEV"
 do
+    if [ $I -le 0 ]
+    then
+	echo "can't contact axpert inverter" >&2
+	exit 2
+    fi
+    let I--;
     sleep 1;
 done
 
-## empty input buffer
-read -n 30 -t 1 -u 5
+function read_axpert() {
+    ## empty input buffer
+    read -n 30 -t 1 -u 5
 
-#echo -e "$CMD$(axpert_crc16 "$CMD")" >&2
-echo -en "$CMD$(axpert_crc16 "$CMD")\r" >&5
+    echo -en "$CMD$(axpert_crc16 "$CMD")\r" >&5
 
-if ! read -u 5 -t 2 LINE
-then
-    if [ "${#LINE}" -ne 110 -o "${LINE:0:1}${LINE:(-3)}" != "($(echo -en "$(axpert_crc16 "${LINE:0:(${#LINE}-3)}")\r")" ]
+    if ! read -u 5 -t 2 -d '\r' LINE
     then
-	echo "couldn't read correct line from device" >&2
-	exit 1
+	# test for minimum length($LINE), start char "(" and CRC
+	if [ "${#LINE}" -ne 110 ]
+	then
+	    return 1
+	elif [ "${LINE:0:1}${LINE:(-3)}" != "($(echo -en "$(axpert_crc16 "${LINE:0:(${#LINE}-3)}")\r")" ]
+	then
+	    return 1
+	fi
     fi
-    echo "$(date +%Y%m%d%H%M%S) ${LINE:1:(${#LINE}-4)}" >> "$LOGFILE";
+    echo "$(date +%Y%m%d%H%M%S) ${LINE:1:(${#LINE}-4)}"
+}
+
+
+# try multiple times
+for ((I=0; I<TRIES; I++))
+do
+    if RESULT=$(read_axpert)
+    then
+	echo "$RESULT" >> "$LOGFILE";
+	break;
+    fi
+done
+
+if [ $I -eq $TRIES ]
+then
+    echo "couldn't read correct line from device" >&2
+    exit 1
 fi
