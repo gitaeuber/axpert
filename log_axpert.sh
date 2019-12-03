@@ -4,6 +4,7 @@
 # © Lars Täuber; AGPLv3 http://www.gnu.org/licenses/agpl-3.0.html
 #   lars.taeuber@web.de
 #
+# 2019-12-04	log Device Mode too
 # 2019-11-30	small optimizations
 # 2019-11-23	initial version
 #
@@ -16,7 +17,6 @@ PORT=3000
 #DEV="/dev/ttyUSB0"
 DEV="/dev/tcp/$SERVER/$PORT"
 LOGFILE="/srv/inverter/$(date +%Y-%m)-1.log"
-CMD="QPIGS"
 TRIES=2
 
 function axpert_crc16() {
@@ -54,7 +54,7 @@ function axpert_crc16() {
 }	# axpert_crc16()
 
 test -e "$LOGFILE" || \
-    echo "%Y%m%d%H%M%S U_GRID F_GRID U_OUT F_OUT VA_OUT P_OUT LOAD% U_BUS U_BATT I_BATT_IN C_BATT T_INV I_PV2BATT U_PV U_BATT_SCC I_BATT_OUT STATUS_BITS1 dU_FAN EEPROM P_PV STATUS_BITS2" >> "$LOGFILE";
+    echo "%Y%m%d%H%M%S U_GRID F_GRID U_OUT F_OUT VA_OUT P_OUT LOAD% U_BUS U_BATT I_BATT_IN C_BATT T_INV I_PV2BATT U_PV U_BATT_SCC I_BATT_OUT STATUS_BITS1 dU_FAN EEPROM P_PV STATUS_BITS2 MODUS" >> "$LOGFILE";
 
 let I=10;
 while ! exec 5<>"$DEV"
@@ -72,12 +72,12 @@ function read_axpert() {
     ## empty input buffer
     read -n 30 -t 1 -u 5
 
-    echo -en "$CMD$(axpert_crc16 "$CMD")\r" >&5
+    echo -en "$1$(axpert_crc16 "$1")\r" >&5
 
     if ! read -u 5 -t 2 -d '\r' LINE
     then
 	# test for minimum length($LINE), start char "(" and CRC
-	if [ "${#LINE}" -ne 110 ]
+	if [ "${#LINE}" -lt 4 ]
 	then
 	    return 1
 	elif [ "${LINE:0:1}${LINE:(-3)}" != "($(echo -en "$(axpert_crc16 "${LINE:0:(${#LINE}-3)}")\r")" ]
@@ -85,22 +85,27 @@ function read_axpert() {
 	    return 1
 	fi
     fi
-    echo "$(date +%Y%m%d%H%M%S) ${LINE:1:(${#LINE}-4)}"
+    echo "${LINE:1:(${#LINE}-4)}"
 }
 
+RESULT=""
 
-# try multiple times
-for ((I=0; I<TRIES; I++))
+for CMD in QPIGS QMOD
 do
-    if RESULT=$(read_axpert)
-    then
-	echo "$RESULT" >> "$LOGFILE";
-	break;
-    fi
+    # try multiple times
+    for ((I=0; I<TRIES; I++))
+    do
+	if RESULT="$RESULT $(read_axpert $CMD)"
+	then
+	    break;
+	fi
+    done
 done
 
-if [ $I -eq $TRIES ]
+if [ $I -ne $TRIES ]
 then
+    echo "$(date +%Y%m%d%H%M%S)$RESULT" >> "$LOGFILE";
+else
     echo "couldn't read correct line from device" >&2
     exit 1
 fi
