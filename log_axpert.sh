@@ -4,6 +4,7 @@
 # © Lars Täuber; AGPLv3 http://www.gnu.org/licenses/agpl-3.0.html
 #   lars.taeuber@web.de
 #
+# 2019-12-05	simplification (raw mode with ser2net)
 # 2019-12-04	log Device Mode too
 # 2019-11-30	small optimizations
 # 2019-11-23	initial version
@@ -12,8 +13,11 @@
 # serial settings: 2400 baud 8N1
 #
 # use SERVER and PORT if you connect via a ser2net server
+# ser2net has to be configured for the "raw" mode,
+# example :
+# 2000:raw:5:/dev/ttyUSB0:2400 NONE 1STOPBIT 8DATABITS
 SERVER="ser2net"
-PORT=3000
+PORT=2000
 #DEV="/dev/ttyUSB0"
 DEV="/dev/tcp/$SERVER/$PORT"
 LOGFILE="/srv/inverter/$(date +%Y-%m)-1.log"
@@ -69,23 +73,20 @@ do
 done
 
 function read_axpert() {
-    ## empty input buffer
-    read -n 30 -t 1 -u 5
-
     echo -en "$1$(axpert_crc16 "$1")\r" >&5
 
-    if ! read -u 5 -t 2 -d '\r' LINE
+    if ! read -u 5 -t 2 -d $(echo -e '\r') LINE
     then
 	# test for minimum length($LINE), start char "(" and CRC
-	if [ "${#LINE}" -lt 4 ]
+	if [ "${#LINE}" -lt 3 ]
 	then
 	    return 1
-	elif [ "${LINE:0:1}${LINE:(-3)}" != "($(echo -en "$(axpert_crc16 "${LINE:0:(${#LINE}-3)}")\r")" ]
+	elif [ "${LINE:0:1}${LINE:(-2)}" != "($(echo -en "$(axpert_crc16 "${LINE:0:(${#LINE}-2)}")")" ]
 	then
 	    return 1
 	fi
     fi
-    echo "${LINE:1:(${#LINE}-4)}"
+    echo "${LINE:1:(${#LINE}-3)}"
 }
 
 RESULT=""
@@ -95,8 +96,9 @@ do
     # try multiple times
     for ((I=0; I<TRIES; I++))
     do
-	if RESULT="$RESULT $(read_axpert $CMD)"
+	if STATUS=$(read_axpert $CMD)
 	then
+	    RESULT="$RESULT $STATUS"
 	    break;
 	fi
     done
