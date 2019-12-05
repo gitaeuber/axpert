@@ -3,6 +3,7 @@
 # © Lars Täuber; AGPLv3 http://www.gnu.org/licenses/agpl-3.0.html
 #   lars.taeuber@web.de
 #
+# 2019-12-05	simpler and faster - use "raw" mode when used with ser2net
 # 2019-11-23	initial version
 #
 
@@ -11,6 +12,7 @@
 # use SERVER and PORT if you connect via a ser2net server
 SERVER=ser2net
 PORT=3000
+PORT=2000
 #DEV="/dev/ttyUSB0"
 DEV="/dev/tcp/$SERVER/$PORT"
 
@@ -50,6 +52,39 @@ function axpert_crc16() {
 }
 
 
+function help() {
+    echo "usage: $0 [-d DEV] CMD [[CMD] ...]"
+    echo "          DEV: device to connect to; e.g. /dev/ttyUSB0 or /dev/tcp/ser2net.de/PORT"
+    echo
+    echo " $0 sends a command CMD to axpert compatible inverter an prints the answer."
+    echo
+}
+
+
+function get_answer_for_cmd() {
+    exec 5<>"$DEV" || return 1
+
+    echo -en "$1\t"
+    echo -en "$1$(axpert_crc16 "$1")\r" >&5
+
+    read -d $(echo -e '\r') -u 5 -t 3 LINE
+
+    echo "${LINE:1:$((${#LINE}-3))} "
+
+    # test for minimum length($LINE)
+    if [ "${#LINE}" -le 2 ]
+    then
+        echo -e "\tanswer incorrect\t!!!!!!"
+    # test for start char "(" and CRC
+    elif [ "${LINE:0:1}${LINE:(-2)}" != "($(echo -en "$(axpert_crc16 "${LINE:0:(${#LINE}-2)}")")" ]
+    then
+        echo -e "\tanswer incorrect\t!!!!!!"
+    fi
+
+    exec 5>&-
+}
+
+
 # parse device option
 if [ $# -ge 2 ]
 then
@@ -58,39 +93,32 @@ then
 	    DEV="$2"
 	    shift 2
 	    ;;
+	"-h"|"-help"|"--help")
+	    help
+	    exit
+	    ;;
     esac
 fi
 
 
 if [ $# -gt 0 ]
 then
-    exec 5<>"$DEV" || exit 1
-    sleep .25
-
-    ## empty input buffer
-    read -n 30 -t 1 -u 5
-
     while [ $# -gt 0 ]
     do
-	echo -en "$1\t"
-	echo -en "$1$(axpert_crc16 "$1")\r" >&5
-	read -u 5 -t 3 LINE
-	    # test for minimum length($LINE), start char "(" and CRC
-	    if [ "${#LINE}" -gt 3 -a "${LINE:0:1}${LINE:(-3)}" = "($(echo -en "$(axpert_crc16 "${LINE:0:(${#LINE}-3)}")\r")" ]
-	    then
-		echo "${LINE:1:$((${#LINE}-4))} "
-	    else
-		echo "answer incorrect"
-	    fi
+	if ! get_answer_for_cmd "$1"
+	then
+	    echo "Error talking to inverter via $DEV" >&2
+	    exit 1
+	fi
 	shift
     done
-    exec 5<&-
 else
-    echo "usage: $0 [-d DEV] CMD [[CMD] ...]"
-    echo "          DEV: device to connect to; e.g. /dev/ttyUSB0 or /dev/tcp/ser2net.de/PORT"
-    echo
-    echo " $0 sends a command CMD to axpert compatible inverter an prints the answer."
-    echo
-    exit 2
+    while read -p "> " -a CMD
+    do
+	if ! get_answer_for_cmd "$CMD"
+	then
+	    echo "Error talking to inverter via $DEV" >&2
+	    exit 1
+	fi
+    done
 fi
-
