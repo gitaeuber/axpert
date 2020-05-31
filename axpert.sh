@@ -3,6 +3,7 @@
 # © Lars Täuber; AGPLv3 http://www.gnu.org/licenses/agpl-3.0.html
 #   lars.taeuber@web.de
 #
+# 2019-12-17	better testing for checksum
 # 2019-12-05	simpler and faster - use "raw" mode when used with ser2net
 # 2019-11-23	initial version
 #
@@ -11,10 +12,13 @@
 #
 # use SERVER and PORT if you connect via a ser2net server
 SERVER=ser2net
-PORT=3000
 PORT=2000
 #DEV="/dev/ttyUSB0"
 DEV="/dev/tcp/$SERVER/$PORT"
+USE_CRIPPLED_TTY=""
+
+#                8    N       1
+# stty -F $DEV cs8 -parenb -cstopb 2400
 
 
 function axpert_crc16() {
@@ -53,7 +57,9 @@ function axpert_crc16() {
 
 
 function help() {
-    echo "usage: $0 [-d DEV] CMD [[CMD] ...]"
+    echo "usage: $0 [-c] [-u DEV] [-d DEV] CMD [[CMD] ...]"
+    echo "       -c: show supported commands"
+    echo "       -d: use \"normal\" devices"
     echo "          DEV: device to connect to; e.g. /dev/ttyUSB0 or /dev/tcp/ser2net.de/PORT"
     echo
     echo " $0 sends a command CMD to axpert compatible inverter an prints the answer."
@@ -64,32 +70,49 @@ function help() {
 function get_answer_for_cmd() {
     exec 5<>"$DEV" || return 1
 
+    test "QPIGS" = "$1" && \
+	echo -e "\nU_GRID F_GRID U_OUT F_OUT VA_OUT P_OUT LOAD% U_BUS U_BATT I_BATT_IN C_BATT T_INV I_PV2BATT U_PV U_BATT_SCC I_BATT_OUT STATUS_BITS1 dU_FAN EEPROM P_PV STATUS_BITS2"
+
     echo -en "$1\t"
     echo -en "$1$(axpert_crc16 "$1")\r" >&5
 
-    read -d $(echo -e '\r') -u 5 -t 3 LINE
+    read -u 5 -t 8 -d $'\r' LINE
+    RETURN=$?
 
-    echo "${LINE:1:$((${#LINE}-3))} "
-
-    # test for minimum length($LINE)
-    if [ "${#LINE}" -le 2 ]
+    if [ "${LINE:0:4}" = "(NAK" ]
     then
-        echo -e "\tanswer incorrect\t!!!!!!"
-    # test for start char "(" and CRC
-    elif [ "${LINE:0:1}${LINE:(-2)}" != "($(echo -en "$(axpert_crc16 "${LINE:0:(${#LINE}-2)}")")" ]
+	echo "NAK: command unknown to the inverter."
+    # test for correct length($LINE)
+    elif [ "${LINE:0:4}" = "(ACK" ]
     then
-        echo -e "\tanswer incorrect\t!!!!!!"
+	echo "ACK"
+    else
+	if [ "$RETURN" -gt 128 ]
+	then
+	    echo -e "Command timed out. $RETURN: ${#LINE}\t${LINE:0:(${#LINE}-2)}"
+	elif [ "${LINE:0:1}${LINE:(-2)}" = "($(echo -en "$(axpert_crc16 "${LINE:0:(${#LINE}-2)}")")" ]
+	then
+#	    echo "${#LINE}:${LINE:1:(${#LINE}-2)}"
+	    echo "${LINE:1:(${#LINE}-3)}"
+	else
+#	    echo "${LINE:1:(${#LINE}-2)}"
+	    echo "${#LINE}:${LINE}"
+	fi
     fi
-
     exec 5>&-
 }
 
 
 # parse device option
-if [ $# -ge 2 ]
+if [ $# -ge 1 ]
 then
     case "$1" in
 	-d)
+	    test $# -lt 2 && {
+		echo "error parsing device after \"$1\"" >&2
+		help
+		exit
+	    }
 	    DEV="$2"
 	    shift 2
 	    ;;
@@ -105,20 +128,24 @@ if [ $# -gt 0 ]
 then
     while [ $# -gt 0 ]
     do
-	if ! get_answer_for_cmd "$1"
-	then
-	    echo "Error talking to inverter via $DEV" >&2
-	    exit 1
-	fi
+	get_answer_for_cmd "$1"
+	case $? in
+	    1)	echo "Error talking to inverter via $DEV" >&2
+		exit 1
+		;;
+	esac
 	shift
     done
 else
     while read -p "> " -a CMD
     do
-	if ! get_answer_for_cmd "$CMD"
-	then
-	    echo "Error talking to inverter via $DEV" >&2
-	    exit 1
-	fi
+	get_answer_for_cmd "$CMD"
+	case $? in
+	    1)	echo "Error talking to inverter via $DEV" >&2
+		exit 1
+		;;
+	    2)	echo "Command $1 unknown. Please use {-c} to get a list of known commands." >&2
+		;;
+	esac
     done
 fi
