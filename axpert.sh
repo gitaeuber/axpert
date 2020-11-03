@@ -57,8 +57,10 @@ function axpert_crc16() {
 
 
 function help() {
-    echo "usage: $0 [-c] [-u DEV] [-d DEV] CMD [[CMD] ...]"
+    echo "usage: $0 [-c] [-p PORT] [-S SERVER-IP] [-u DEV] [-d DEV] CMD [[CMD] ...]"
     echo "       -c: show supported commands"
+    echo "       -p: use port number"
+    echo "       -S: use server for ser2net connection"
     echo "       -d: use \"normal\" devices"
     echo "          DEV: device to connect to; e.g. /dev/ttyUSB0 or /dev/tcp/ser2net.de/PORT"
     echo
@@ -114,6 +116,26 @@ then
 		exit
 	    }
 	    DEV="$2"
+	    shift 2
+	    ;;
+	-p)
+	    test $# -lt 2 && {
+		echo "error parsing device after \"$1\"" >&2
+		help
+		exit
+	    }
+	    PORT="$2"
+	    DEV="/dev/tcp/$SERVER/$PORT"
+	    shift 2
+	    ;;
+	-S)
+	    test $# -lt 2 && {
+		echo "error parsing device after \"$1\"" >&2
+		help
+		exit
+	    }
+	    SERVER="$2"
+	    DEV="/dev/tcp/$SERVER/$PORT"
 	    shift 2
 	    ;;
 	"-h"|"-help"|"--help")
