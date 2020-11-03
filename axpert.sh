@@ -17,8 +17,6 @@ PORT=2000
 DEV="/dev/tcp/$SERVER/$PORT"
 USE_CRIPPLED_TTY=""
 
-#                8    N       1
-# stty -F $DEV cs8 -parenb -cstopb 2400
 
 
 function axpert_crc16() {
@@ -143,6 +141,13 @@ then
 	    exit
 	    ;;
     esac
+fi
+
+if [ "$DEV" = "${DEV#/dev/tcp/}" ]
+then
+#                   8    N       1
+    stty -F "$DEV" cs8 -parenb -cstopb 2400 \
+    || exit
 fi
 
 
